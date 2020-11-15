@@ -1,23 +1,73 @@
-const player = document.getElementById('audio');
-const chunks = [];
+const loopStates = {
+  INIT: 'init',
+  FIRST_RECORDING: 'first_recording',
+  IDLE: 'idle',
+  ARMED: 'armed',
+  SUBSEQUENT_RECORDING: 'subsequent_recording',
+}
 
-function handleKeyPress(event, mediaRecorder) {
-  if (mediaRecorder.state == "recording" && event.charCode == 32) {
-    console.log("recording and pressing space");
-    // mediaRecorder.requestData();
+function handleKeyPress(event, state) {
+  // Space bar pressed
+  if (event.charCode == 32) {
+    console.log("space bad pressed");
 
-    mediaRecorder.stop()
-    mediaRecorder.start()
-  }
-  else if (event.charCode == 32) {
-    console.log("start recording");
-    mediaRecorder.start()
+    switch(state.loopState) {
+      case loopStates.INIT:
+        state.mediaRecorder.start();
+        state.loopState = loopStates.FIRST_RECORDING;
+        break;
+
+      case loopStates.FIRST_RECORDING:
+        state.loopState = loopStates.IDLE;
+        state.mediaRecorder.stop();
+        break;
+
+      case loopStates.IDLE:
+        state.loopState = loopStates.ARMED;
+        break;
+
+      case loopStates.ARMED:
+        // disarm
+        state.loopState = loopStates.IDLE;
+        break;
+
+      case loopStates.SUBSEQUENT_RECORDING:
+        // Stop early
+        state.loopState = loopStates.IDLE;
+        state.mediaRecorder.stop();
+        // TODO request data?
+        break;
+    }
+
+    console.log(state.loopState);
   }
 }
 
+function startAudio(state) {
+  state.tracks.forEach((track, _) => {
+    let audioNode = new AudioBufferSourceNode(state.audioCtx)
+    audioNode.buffer = track;
+    audioNode.connect(audioCtx.destination);
+  });
+}
 
+function handleDataAvailable(event, state) {
+    console.log("Play");
+    console.log(event.data);
+
+    state.tracks.push(event.data);
+
+    // Start playing audio
+    if (state.tracks.length == 1) {
+      startAudio(state);
+    }
+}
 
 async function main() {
+  // const player = document.getElementById('audio');
+  var AudioContext = window.AudioContext || window.webkitAudioContext;
+  var audioCtx = new AudioContext();
+
   let mediaRecorder = await navigator
         .mediaDevices
         .getUserMedia({ audio: true, video: false })
@@ -25,27 +75,17 @@ async function main() {
           console.log("streaming");
           return new MediaRecorder(stream)
        });
-  
-  mediaRecorder.ondataavailable = event => { 
-    // chunks.push(event.data);
-    // console.log(chunks);
 
-    // player.src = window.URL.createObjectURL(chunks[chunks.length - 1]);
+  let state = {
+    loopState: loopStates.INIT,
+    duration: null,
+    tracks: [],
+    mediaRecorder: mediaRecorder,
+    audioCtx: audioCtx,
+  }
 
-
-    console.log("Play");
-    console.log(event.data);
-
-    player.srcObject = null;
-    player.src = window.URL.createObjectURL(event.data);
-    player.play();
-
-    console.log(player.srcObject);
-  };
-
+  mediaRecorder.ondataavailable = event => handleDataAvailable(event, state);
   document.addEventListener("keypress", event => handleKeyPress(event, mediaRecorder));
-  
-  //mediaRecorder.ondataavailable = handle
 }
 
 main()
